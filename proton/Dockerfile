@@ -1,6 +1,8 @@
 FROM debian:13-slim
 
-ARG PROTON_VERSION=10-30
+ARG PROTON_VERSION
+
+ENV PROTON_VERSION=${PROTON_VERSION}
 
 RUN dpkg --add-architecture i386 \
     && apt update \
@@ -32,6 +34,8 @@ RUN dpkg --add-architecture i386 \
     && ln -s /root/.steam/sdk64/steamclient.so /root/.steam/sdk64/steamservice.so \
     && ln -s /steamcmd/linux32 /root/.steam/sdk32 \
     && ln -s /root/.steam/sdk32/steamclient.so /root/.steam/sdk32/steamservice.so \
-    && curl -sqL "https://github.com/GloriousEggroll/proton-ge-custom/releases/download/GE-Proton${PROTON_VERSION}/GE-Proton${PROTON_VERSION}.tar.gz" | tar zxvf - -C "/steamcmd/compatibilitytools.d/" \
-    && ln -s /steamcmd/compatibilitytools.d/GE-Proton${PROTON_VERSION}/proton /usr/local/bin/proton \
-    && chmod +x /usr/local/bin/proton
+    && curl -sqL "https://github.com/GloriousEggroll/proton-ge-custom/releases/download/GE-Proton${PROTON_VERSION}/GE-Proton${PROTON_VERSION}.tar.gz" | tar zxvf - -C "/steamcmd/compatibilitytools.d/"
+
+COPY ./rootfs/ /
+
+ENTRYPOINT [ "/entrypoint.sh" ]

@@ -7,6 +7,7 @@ on:
 env:
   APP: proton
   REGISTRY: ghcr.io/elmariovi
+  PROTON_VERSION: "10-30"
 jobs:
   build:
     name: Build Proton
@@ -25,14 +26,17 @@ jobs:
         with:
           context: ./${{ env.APP }}/
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.APP }}:latest
+          build-args: |
+            PROTON_VERSION=${{ env.PROTON_VERSION }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.APP }}:${{ env.PROTON_VERSION }}
         env:
           DOCKER_BUILD_SUMMARY: false
       - name: Scan for vulnerabilities
         id: scan
         uses: crazy-max/ghaction-container-scan@v3
         with:
-          image: ${{ env.REGISTRY }}/${{ env.APP }}:latest
+          image: ${{ env.REGISTRY }}/${{ env.APP }}:${{ env.PROTON_VERSION }}
           annotations: true
           dockerfile: ./${{ env.APP }}/Dockerfile
       - name: Clean up untagged images
