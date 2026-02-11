@@ -1,0 +1,45 @@
+name: Net Nomad CI
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "net-nomad/**"
+env:
+  APP: net-nomad
+  REGISTRY: ghcr.io/elmariovi
+jobs:
+  build:
+    name: Build Net Nomad
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./${{ env.APP }}/
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.APP }}:latest
+        env:
+          DOCKER_BUILD_SUMMARY: false
+      - name: Scan for vulnerabilities
+        id: scan
+        uses: crazy-max/ghaction-container-scan@v3
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.APP }}:latest
+          annotations: true
+          dockerfile: ./${{ env.APP }}/Dockerfile
+      - name: Clean up untagged images
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: ${{ env.APP }}
+          package-type: container
+          delete-only-untagged-versions: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+
