@@ -6,7 +6,7 @@ on:
       - "net-nomad/**"
 env:
   APP: net-nomad
-  REGISTRY: ghcr.io/elmariovi
+  REGISTRY: ghcr.io/mariojcr
 jobs:
   build:
     name: Build Net Nomad

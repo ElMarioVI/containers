@@ -8,7 +8,7 @@ on:
       - "alpine/**"
 env:
   APP: alpine
-  REGISTRY: ghcr.io/elmariovi
+  REGISTRY: ghcr.io/mariojcr
 jobs:
   build:
     name: Build Alpine

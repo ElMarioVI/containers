@@ -6,7 +6,7 @@ on:
       - "proton/**"
 env:
   APP: proton
-  REGISTRY: ghcr.io/elmariovi
+  REGISTRY: ghcr.io/mariojcr
   PROTON_VERSION: "10-30"
 jobs:
   build:
