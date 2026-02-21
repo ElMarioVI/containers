@@ -45,13 +45,14 @@ natpmp_loop() {
       if [ "$port" != "$prev_port" ]; then
         # Cerrar puerto anterior
         if [ -n "$prev_port" ]; then
-          iptables -D INPUT -p tcp --dport "$prev_port" -j ACCEPT 2>/dev/null || true
-          iptables -D INPUT -p udp --dport "$prev_port" -j ACCEPT 2>/dev/null || true
+          iptables -D INPUT -i "$IFACE" -p tcp --dport "$prev_port" -j ACCEPT 2>/dev/null || true
+          iptables -D INPUT -i "$IFACE" -p udp --dport "$prev_port" -j ACCEPT 2>/dev/null || true
         fi
         # Abrir nuevo puerto
-        iptables -A INPUT -p tcp --dport "$port" -j ACCEPT
-        iptables -A INPUT -p udp --dport "$port" -j ACCEPT
+        iptables -A INPUT -i "$IFACE" -p tcp --dport "$port" -j ACCEPT
+        iptables -A INPUT -i "$IFACE" -p udp --dport "$port" -j ACCEPT
         echo "[natpmp] Puerto asignado: $port (UDP+TCP) — regla INPUT actualizada"
+        iptables -S || true
         prev_port="$port"
       fi
     else
