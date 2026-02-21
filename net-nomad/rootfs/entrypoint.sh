@@ -43,7 +43,15 @@ natpmp_loop() {
     port="$(echo "$udp_out" | awk '/Mapped public port/{print $4}')"
     if [ -n "$port" ]; then
       if [ "$port" != "$prev_port" ]; then
-        echo "[natpmp] Puerto asignado: $port (UDP+TCP)"
+        # Cerrar puerto anterior
+        if [ -n "$prev_port" ]; then
+          iptables -D INPUT -p tcp --dport "$prev_port" -j ACCEPT 2>/dev/null || true
+          iptables -D INPUT -p udp --dport "$prev_port" -j ACCEPT 2>/dev/null || true
+        fi
+        # Abrir nuevo puerto
+        iptables -A INPUT -p tcp --dport "$port" -j ACCEPT
+        iptables -A INPUT -p udp --dport "$port" -j ACCEPT
+        echo "[natpmp] Puerto asignado: $port (UDP+TCP) — regla INPUT actualizada"
         prev_port="$port"
       fi
     else
@@ -59,7 +67,6 @@ natpmp_loop() {
 IFACE="$(ip -4 -o addr show | awk '!/ lo /{print $2; exit}')"
 ALLOC_CIDR="$(ip -4 -o addr show dev "$IFACE" | awk '{print $4}' || true)"
 ALLOC_IP="$(echo "$ALLOC_CIDR" | cut -d/ -f1)"
-ALLOC_SUBNET="$(ipcalc -n "$ALLOC_CIDR" | cut -d= -f2)/$(echo "$ALLOC_CIDR" | cut -d/ -f2)"
 
 # -------- iptables (nf_tables) --------
 # Limpieza
@@ -73,15 +80,13 @@ iptables -P INPUT DROP
 iptables -P OUTPUT DROP
 iptables -P FORWARD DROP
 
-# Estado / loopback / ICMP / hairpin intra-group
+# Estado / loopback / ICMP
 iptables -A INPUT  -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 iptables -A INPUT  -i lo -j ACCEPT
 iptables -A OUTPUT -o lo -j ACCEPT
 iptables -A INPUT  -p icmp -j ACCEPT
 iptables -A OUTPUT -p icmp -j ACCEPT
-iptables -A INPUT  -s "$ALLOC_SUBNET" -d "$ALLOC_IP" -j ACCEPT
-iptables -A OUTPUT -s "$ALLOC_IP" -d "$ALLOC_SUBNET" -j ACCEPT
 
 # DNS (UDP/TCP 53)
 IFS=','; for d in $FW_DNS; do
