@@ -7,7 +7,7 @@ on:
 env:
   APP: proton
   REGISTRY: ghcr.io/mariojcr
-  PROTON_VERSION: "10-30"
+  PROTON_VERSION: "10-32"
 jobs:
   build:
     name: Build Proton
