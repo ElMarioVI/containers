@@ -1,4 +1,4 @@
-#!/usr/bin/env sh
+#!/bin/sh
 set -euo pipefail
 
 # -------- Config por ENV --------
@@ -7,12 +7,59 @@ FW_EGRESS="${FW_EGRESS:-false}"      # "true"|"false" omitir = false
 FW_ALLOW_IN="${FW_ALLOW_IN:-}"       # "SRC:PROTO[:PORT]" PORT: 443 | 8000-9000 | omitir = todo
 FW_ALLOW_OUT="${FW_ALLOW_OUT:-}"     # "DST:PROTO[:PORT]" PORT: 443 | 8000-9000 | omitir = todo
 
+# NAT-PMP (ProtonVPN port forwarding)
+NATPMP_ENABLED="${NATPMP_ENABLED:-false}"     # "true" = activar NAT-PMP port forwarding
+NATPMP_GATEWAY="${NATPMP_GATEWAY:-10.2.0.1}" # IP del gateway NAT-PMP (ProtonVPN default)
+NATPMP_INTERVAL="${NATPMP_INTERVAL:-45}"     # Segundos entre renovaciones (lifetime=60)
+
 # -------- Helpers --------
 trim() { awk '{$1=$1};1'; }
 
+# -------- NAT-PMP loop --------
+natpmp_loop() {
+  echo "[natpmp] Iniciando NAT-PMP loop (gateway=$NATPMP_GATEWAY interval=${NATPMP_INTERVAL}s)"
+
+  # Esperar a que el gateway NAT-PMP esté disponible (backoff: 5s, 10s, 20s, 30s...)
+  wait=5
+  while ! natpmpc -g "$NATPMP_GATEWAY" >/dev/null 2>&1; do
+    echo "[natpmp] Gateway $NATPMP_GATEWAY no disponible, reintentando en ${wait}s..."
+    sleep "$wait"
+    [ "$wait" -lt 30 ] && wait=$((wait * 2))
+  done
+  echo "[natpmp] Gateway $NATPMP_GATEWAY accesible"
+
+  prev_port=""
+  while true; do
+    # Solicitar mapeo UDP + TCP con lifetime 60s
+    udp_out="$(natpmpc -a 1 0 udp 60 -g "$NATPMP_GATEWAY" 2>&1)" || {
+      echo "[natpmp] ERROR: natpmpc UDP falló"; echo "$udp_out"
+      sleep "$NATPMP_INTERVAL"; continue
+    }
+    natpmpc -a 1 0 tcp 60 -g "$NATPMP_GATEWAY" >/dev/null 2>&1 || {
+      echo "[natpmp] ERROR: natpmpc TCP falló"
+      sleep "$NATPMP_INTERVAL"; continue
+    }
+
+    port="$(echo "$udp_out" | awk '/Mapped public port/{print $4}')"
+    if [ -n "$port" ]; then
+      if [ "$port" != "$prev_port" ]; then
+        echo "[natpmp] Puerto asignado: $port (UDP+TCP)"
+        prev_port="$port"
+      fi
+    else
+      echo "[natpmp] WARNING: No se pudo parsear el puerto"
+      echo "$udp_out"
+    fi
+
+    sleep "$NATPMP_INTERVAL"
+  done
+}
+
 # -------- Interfaz --------
 IFACE="$(ip -4 -o addr show | awk '!/ lo /{print $2; exit}')"
-ALLOC_IP="$(ip -4 -o addr show dev "$IFACE" | awk '{print $4}' | cut -d/ -f1 || true)"
+ALLOC_CIDR="$(ip -4 -o addr show dev "$IFACE" | awk '{print $4}' || true)"
+ALLOC_IP="$(echo "$ALLOC_CIDR" | cut -d/ -f1)"
+ALLOC_SUBNET="$(ipcalc -n "$ALLOC_CIDR" | cut -d= -f2)/$(echo "$ALLOC_CIDR" | cut -d/ -f2)"
 
 # -------- iptables (nf_tables) --------
 # Limpieza
@@ -33,8 +80,8 @@ iptables -A INPUT  -i lo -j ACCEPT
 iptables -A OUTPUT -o lo -j ACCEPT
 iptables -A INPUT  -p icmp -j ACCEPT
 iptables -A OUTPUT -p icmp -j ACCEPT
-iptables -A INPUT  -d "$ALLOC_IP" -s "$ALLOC_IP" -j ACCEPT
-iptables -A OUTPUT -s "$ALLOC_IP" -d "$ALLOC_IP" -j ACCEPT
+iptables -A INPUT  -s "$ALLOC_SUBNET" -d "$ALLOC_IP" -j ACCEPT
+iptables -A OUTPUT -s "$ALLOC_IP" -d "$ALLOC_SUBNET" -j ACCEPT
 
 # DNS (UDP/TCP 53)
 IFS=','; for d in $FW_DNS; do
@@ -76,7 +123,19 @@ echo "[fw] iface=$IFACE ip=$ALLOC_IP egress=$FW_EGRESS"
 echo "[fw] DNS=$FW_DNS"
 echo "[fw] allow_in=$FW_ALLOW_IN"
 echo "[fw] allow_out=$FW_ALLOW_OUT"
+echo "[fw] natpmp=$NATPMP_ENABLED"
 
 iptables -S || true
 
-sleep infinity
+# -------- NAT-PMP --------
+if [ "$NATPMP_ENABLED" = "true" ]; then
+  natpmp_loop &
+  NATPMP_PID=$!
+  echo "[natpmp] Loop iniciado (PID=$NATPMP_PID)"
+fi
+
+# Esperar señales para limpieza
+trap 'echo "[fw] Señal recibida, terminando..."; [ -n "${NATPMP_PID:-}" ] && kill $NATPMP_PID 2>/dev/null; exit 0' INT TERM
+
+sleep infinity &
+wait $!
